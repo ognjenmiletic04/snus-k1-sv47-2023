@@ -45,6 +45,7 @@
   <ItemGroup>
     <Compile Include="Configuration\XmlConfigLoader.cs" />
     <Compile Include="Core\Models\Job.cs" />
+    <Compile Include="Core\Models\JobExecutionInfo.cs" />
     <Compile Include="Core\Models\JobHandle.cs" />
     <Compile Include="Core\Models\JobType.cs" />
     <Compile Include="Core\Utils\ThreadSafePriorityQueue.cs" />
@@ -58,6 +59,10 @@
   <ItemGroup>
     <Content Include="Configuration\SystemConfig.xml" />
     <Content Include="Output\log.txt" />
+    <Content Include="Output\report_0.xml" />
+    <Content Include="Output\report_1.xml" />
+    <Content Include="Output\report_2.xml" />
+    <Content Include="Output\report_3.xml" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
