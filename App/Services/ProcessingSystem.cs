@@ -2,17 +2,19 @@
 using App.Core.Utils;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace App.Services
 {
     public class ProcessingSystem
     {
         private readonly ThreadSafePriorityQueue queue = new ThreadSafePriorityQueue();
-
+        private readonly List<JobExecutionInfo> executionLog = new List<JobExecutionInfo>();
         private readonly HashSet<Guid> processed = new HashSet<Guid>();
         private readonly Dictionary<Guid, TaskCompletionSource<int>> jobTasks =
             new Dictionary<Guid, TaskCompletionSource<int>>();
@@ -22,6 +24,7 @@ namespace App.Services
 
         private readonly List<Task> workers = new List<Task>();
         private readonly int maxSize;
+        private int reportIndex = 0;
 
         // EVENTI
         public event Func<Guid, int, Task> JobCompleted;
@@ -79,10 +82,23 @@ namespace App.Services
         private async Task HandleJob(Job job)
         {
             var tcs = jobTasks[job.Id];
+            var start = DateTime.Now;
 
             try
             {
                 int result = await ExecuteWithRetry(job);
+
+                var duration = (long)(DateTime.Now - start).TotalMilliseconds;
+
+                lock (executionLog)
+                {
+                    executionLog.Add(new JobExecutionInfo
+                    {
+                        Type = job.Type,
+                        Success = true,
+                        ExecutionTimeMs = duration
+                    });
+                }
 
                 tcs.SetResult(result);
 
@@ -91,6 +107,18 @@ namespace App.Services
             }
             catch (Exception ex)
             {
+                var duration = (long)(DateTime.Now - start).TotalMilliseconds;
+
+                lock (executionLog)
+                {
+                    executionLog.Add(new JobExecutionInfo
+                    {
+                        Type = job.Type,
+                        Success = false,
+                        ExecutionTimeMs = duration
+                    });
+                }
+
                 tcs.SetException(ex);
 
                 if (JobFailed != null)
@@ -210,6 +238,52 @@ namespace App.Services
                     .PeekTop(int.MaxValue)
                     .FirstOrDefault(j => j.Id == id);
             }
+        }
+
+        //LINQ IZVESTAJI
+        public XDocument GenerateReport()
+        {
+            List<JobExecutionInfo> snapshot;
+
+            lock (executionLog)
+            {
+                snapshot = executionLog.ToList();
+            }
+
+            var byType = snapshot.GroupBy(x => x.Type);
+
+            var report = new XElement("Report",
+                byType.Select(group =>
+                    new XElement("JobType",
+                        new XAttribute("Type", group.Key),
+
+                        new XElement("TotalExecuted", group.Count(x => x.Success)),
+
+                        new XElement("AverageTime",
+                            group.Where(x => x.Success)
+                                 .DefaultIfEmpty()
+                                 .Average(x => x == null ? 0 : x.ExecutionTimeMs)
+                        ),
+
+                        new XElement("Failed",
+                            group.Count(x => !x.Success)
+                        )
+                    )
+                )
+            );
+
+            return new XDocument(report);
+        }
+        public void SaveReport(string folderPath)
+        {
+            var report = GenerateReport();
+
+            string fileName = $"report_{reportIndex % 10}.xml";
+            string fullPath = Path.Combine(folderPath, fileName);
+
+            report.Save(fullPath);
+
+            reportIndex++;
         }
     }
 }
